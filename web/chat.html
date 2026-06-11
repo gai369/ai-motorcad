@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Motor Design Assistant</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#1a1a2e;color:#e0e0e0;height:100vh;display:flex;flex-direction:column}
+.header{background:#16213e;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #0f3460}
+.header h1{font-size:18px;color:#e94560}
+.header .status{font-size:12px;color:#888}
+.quick-bar{background:#0f3460;padding:8px 16px;display:flex;gap:6px;flex-wrap:wrap}
+.quick-bar button{background:#16213e;color:#a0c4ff;border:1px solid #1a3a6e;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px;transition:all .2s}
+.quick-bar button:hover{background:#e94560;color:#fff;border-color:#e94560}
+.chat-area{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px}
+.msg{max-width:85%;padding:10px 14px;border-radius:8px;line-height:1.5;font-size:13px;white-space:pre-wrap;word-break:break-word}
+.msg.system{align-self:flex-start;background:#0f3460;color:#a0c4ff;max-width:95%}
+.msg.user{align-self:flex-end;background:#e94560;color:#fff}
+.msg.ai{align-self:flex-start;background:#16213e;color:#e0e0e0;border:1px solid #1a3a6e}
+.msg .label{font-size:10px;margin-bottom:4px;opacity:.6;text-transform:uppercase}
+.input-bar{background:#16213e;padding:12px 20px;display:flex;gap:8px;border-top:1px solid #0f3460}
+.input-bar input{flex:1;background:#1a1a2e;color:#e0e0e0;border:1px solid #0f3460;padding:10px 14px;border-radius:6px;font-size:14px;outline:none}
+.input-bar input:focus{border-color:#e94560}
+.input-bar button{background:#e94560;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-size:14px;cursor:pointer}
+.input-bar button:hover{background:#c73e54}
+.input-bar button:disabled{background:#444;cursor:not-allowed}
+.loading{color:#888;font-style:italic;padding:8px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚡ AI Motor Design Assistant</h1>
+  <span class="status" id="status">Offline</span>
+</div>
+
+<div class="quick-bar">
+  <button onclick="sendCmd('help')">帮助</button>
+  <button onclick="sendCmd('status')">状态</button>
+  <button onclick="sendCmd('show')">查看方案</button>
+  <button onclick="sendCmd('history')">历史</button>
+  <button onclick="sendCmd('undo')">撤销</button>
+  <button onclick="sendCmd('suggest')">建议</button>
+  <button onclick="sendCmd('analyze')">分析</button>
+  <button onclick="sendCmd('llm')">LLM深度分析</button>
+  <button onclick="sendCmd('report')">生成报告</button>
+  <button onclick="loadSpec()">加载示例指标</button>
+</div>
+
+<div class="chat-area" id="chat"></div>
+
+<div class="input-bar">
+  <input id="input" placeholder="输入命令，如: 磁钢厚度 6.5  或 齿宽 +1  或 help ..." 
+         onkeydown="if(event.key==='Enter')send()">
+  <button onclick="send()" id="sendBtn">发送</button>
+</div>
+
+<script>
+const chat = document.getElementById('chat');
+const input = document.getElementById('input');
+const statusEl = document.getElementById('status');
+
+function addMsg(text, role) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  if (role === 'system') div.innerHTML = '<div class=label>SYSTEM</div>' + text.replace(/\n/g, '<br>');
+  else if (role === 'user') div.innerHTML = '<div class=label>YOU</div>' + text;
+  else div.innerHTML = '<div class=label>AI</div>' + text.replace(/\n/g, '<br>');
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function addLoading() {
+  const div = document.createElement('div');
+  div.className = 'loading';
+  div.id = 'loading';
+  div.textContent = 'AI thinking...';
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function removeLoading() {
+  const el = document.getElementById('loading');
+  if (el) el.remove();
+}
+
+async function sendCmd(cmd) {
+  input.value = cmd;
+  await send();
+}
+
+async function loadSpec() {
+  await sendCmd('examples/sample_spec.yaml');
+  await sendCmd('generate');
+}
+
+async function send() {
+  const text = input.value.trim();
+  if (!text) return;
+  
+  addMsg(text, 'user');
+  input.value = '';
+  document.getElementById('sendBtn').disabled = true;
+  addLoading();
+  
+  try {
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: text})
+    });
+    const data = await resp.json();
+    removeLoading();
+    
+    if (data.response) {
+      addMsg(data.response, 'ai');
+    }
+    statusEl.textContent = data.status || 'Offline';
+    
+    if (data.report_file) {
+      addMsg('Report saved: ' + data.report_file, 'system');
+    }
+  } catch (e) {
+    removeLoading();
+    addMsg('Connection error: ' + e.message, 'system');
+  }
+  
+  document.getElementById('sendBtn').disabled = false;
+  input.focus();
+}
+
+// Welcome
+addMsg('Welcome to AI Motor Design Assistant!\\n\\nQuick start:\\n1. Click "加载示例指标" to load a sample spec\\n2. Or type a spec file path like: examples/sample_spec.yaml\\n3. Or describe your project: spec: 150kW 4000rpm IPM water cooled\\n\\nType help for all commands.', 'system');
+
+input.focus();
+</script>
+</body>
+</html>
