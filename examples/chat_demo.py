@@ -1,91 +1,78 @@
-"""Chat Mode Demo - Interactive motor design assistant (offline).
+"""Chat Mode Demo - Excel import + LLM analysis.
 
-This demo shows the complete chat workflow without needing Motor-CAD.
-It automates a typical design iteration:
-1. Load project spec from YAML file
-2. Generate initial design
-3. Modify parameters via natural language
-4. Record simulation results
-5. Get proactive suggestions
+Demonstrates:
+1. Loading project specs from Excel file
+2. Natural language parameter modification
+3. Simulation result recording with rule-based suggestions
+4. LLM deep analysis (offline fallback when no API key)
 """
 
 from ai_motorcad.chat import MotorCADChat
-from ai_motorcad.design_spec import load_spec_from_file
-from ai_motorcad.connector import MotorCADConnector
 
 
 def main():
-    """Run automated demo of the chat workflow."""
     chat = MotorCADChat()
-    # Force offline mode (no Motor-CAD needed for demo)
     chat.connector._offline_mode = True
     chat._mode = "offline"
     chat.connector.connect()
 
     print("=" * 60)
-    print("  DEMO: AI Motor Design Assistant - Chat Workflow")
-    print("  Mode: OFFLINE (no Motor-CAD required)")
+    print("  DEMO: AI Motor Design Assistant")
+    print("  Excel Import + LLM Analysis")
     print("=" * 60)
     print()
 
-    # Step 1: Load spec from YAML file
-    print("Step 1: Loading project spec from sample_spec.yaml...")
-    result = chat._load_spec("examples/sample_spec.yaml")
+    # ---- Part 1: Excel Import ----
+    print("Part 1: Loading spec from Excel file...")
+    print("  File: examples/sample_specs.xlsx (3 motor specs)")
+    result = chat._load_spec("examples/sample_specs.xlsx")
     print(result)
     print()
 
-    # Step 2: Generate initial design
-    print("Step 2: Generating initial design...")
+    # ---- Part 2: Generate Design ----
+    print("Part 2: Generating initial design...")
     result = chat._generate()
     print(result)
     print()
 
-    # Step 3: Modify parameters via natural language
-    print("Step 3: User modifies parameters via natural language...")
-    changes = [
-        ("Magnet_Thickness 6.5", "User: magnet thickness 6.5"),
-        ("Tooth_Width +1", "User: widen teeth by 1mm"),
-        (chr(40831)+chr(23485)+" 8", "User: tooth width 8 (Chinese)"),
-    ]
-    for cmd_text, desc in changes:
-        print(f"  Command: {cmd_text}  ({desc})")
-        result = chat._try_param_change(cmd_text)
-        print(f"  {result}")
-        print()
+    # ---- Part 3: Modify Parameters ----
+    print("Part 3: Modifying parameters...")
+    for cmd in ["磁钢厚度 6.5", "齿宽 8", "轭宽 12"]:
+        r = chat._try_param_change(cmd)
+        print(f"  {r}")
+    print()
 
-    # Step 4: Set simulated results and record
-    print("Step 4: Setting simulated results and recording...")
+    # ---- Part 4: Simulate & Record ----
+    print("Part 4: Recording simulation...")
     chat.connector.set_simulated_results(
         em={
-            "torque_avg": 365.0, "torque_ripple_pct": 8.5,
-            "efficiency": 94.3, "airgap_flux_density": 0.88,
-            "tooth_flux_density": 1.62, "yoke_flux_density": 1.38,
-            "copper_loss": 4.2, "iron_loss": 3.8,
-            "pm_loss": 1.2, "total_loss": 9.2,
+            "torque_avg": 362.0, "torque_ripple_pct": 7.5, "efficiency": 94.5,
+            "airgap_flux_density": 0.89, "tooth_flux_density": 1.58,
+            "yoke_flux_density": 1.32, "copper_loss": 4.5, "iron_loss": 3.0,
+            "pm_loss": 1.0, "total_loss": 8.5,
         },
-        thermal={"winding_temp_max": 152.0, "pm_temp_max": 138.0},
+        thermal={"winding_temp_max": 148.0, "pm_temp_max": 132.0},
     )
-
     result = chat._record()
     print(result)
     print()
 
-    # Step 5: Session summary
-    print("Step 5: Session summary...")
-    print(chat._status())
-    print()
-    print(chat._show())
-    print()
-
-    # Step 6: Generate report
-    print("Step 6: Generating design review report...")
-    result = chat._report()
+    # ---- Part 5: LLM Deep Analysis ----
+    print("Part 5: LLM deep analysis...")
+    result = chat._llm_analyze()
     print(result)
     print()
 
+    # ---- Part 6: Ask LLM a question ----
+    print("Part 6: Asking LLM a design question...")
+    result = chat._llm_ask("这个设计适合改成hairpin绕组吗？需要考虑哪些问题？")
+    print(result)
+    print()
+
+    # ---- Summary ----
     print("=" * 60)
-    print("  Demo complete!")
-    print("  Report saved. Run 'python -m ai_motorcad.chat' for interactive mode.")
+    print("  Session Summary")
+    print(chat._status())
     print("=" * 60)
 
 
