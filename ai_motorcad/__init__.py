@@ -19,7 +19,8 @@ from .advisor import MotorAdvisor, Suggestion
 from .reporter import DesignReporter
 from .design_spec import (
     ProjectSpec, InitialDesign, InitialDesignGenerator,
-    load_spec_from_file, parse_spec_from_text,
+    load_spec_from_file, load_spec_from_excel, load_specs_from_excel,
+    parse_spec_from_text,
 )
 from .design_tracker import SessionManager, SpecComparator, DesignSnapshot
 from .chat import MotorCADChat, ProactiveAdvisor
@@ -31,7 +32,8 @@ __all__ = [
     "MotorAdvisor", "Suggestion",
     "DesignReporter",
     "ProjectSpec", "InitialDesign", "InitialDesignGenerator",
-    "load_spec_from_file", "parse_spec_from_text",
+    "load_spec_from_file", "load_spec_from_excel", "load_specs_from_excel",
+    "parse_spec_from_text",
     "SessionManager", "SpecComparator", "DesignSnapshot",
     "MotorCADChat", "ProactiveAdvisor",
     "LLMAdvisor", "LLMClient", "get_llm_advisor", "has_llm",
