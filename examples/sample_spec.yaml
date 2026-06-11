@@ -1,0 +1,15 @@
+# Motor Design Project Specification
+# AI Motor Design Assistant - Sample Spec
+
+project: "150kW EV Traction Motor"
+motor_type: IPM
+rated_power_kw: 150
+rated_speed_rpm: 4000
+max_speed_rpm: 12000
+dc_voltage_v: 400
+target_efficiency_pct: 95
+max_outer_diameter_mm: 250
+max_stack_length_mm: 180
+cooling: water_jacket
+application: traction
+max_current_density: 16
