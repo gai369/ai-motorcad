@@ -9,7 +9,7 @@ simulation result tracking, and proactive improvement suggestions.
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Callable
-import os, re, sys
+import os, re, sys, json
 
 from .connector import MotorCADConnector, PYMOTORCAD_AVAILABLE
 from .analyzer import MotorAnalyzer, DesignReport, Severity
@@ -19,6 +19,7 @@ from .design_spec import (
     ProjectSpec, InitialDesign, InitialDesignGenerator,
     load_spec_from_file, parse_spec_from_text,
 )
+from .llm_advisor import LLMAdvisor, get_llm_advisor, has_llm
 from .design_tracker import (
     SessionManager, SpecComparator, DesignSnapshot, ChangeRecord,
 )
@@ -238,7 +239,7 @@ class MotorCADChat:
             return self._load(p[1]) if len(p) > 1 else "Usage: load <file>"
         if t in ("new",):
             return self._new()
-        if t.endswith((".json", ".yaml", ".yml", ".txt")):
+        if t.endswith((".json", ".yaml", ".yml", ".txt", ".xlsx")):
             return self._load_spec(text)
         if t.startswith("spec:") or t.startswith("\u6307\u6807:"):
             return self._parse_spec(text.split(":", 1)[1].strip())
@@ -255,6 +256,10 @@ class MotorCADChat:
             return self._compare()
         if t in ("suggest", "\u5efa\u8bae", "\u7ed9\u6211\u5efa\u8bae"):
             return self._suggest()
+        if t == "llm" or t.startswith("llm "):
+            return self._llm_analyze()
+        if t.startswith("ask ") or t.startswith("\u95ee "):
+            return self._llm_ask(t.split(" ", 1)[1] if " " in t else t)
         if t in ("analyze", "\u5206\u6790"):
             return self._analyze()
         if t in ("show", "\u663e\u793a", "\u5f53\u524d\u65b9\u6848", "\u67e5\u770b"):
@@ -292,7 +297,10 @@ Commands:
           report [name]          Generate review report
           status                 Session overview
           help                   This help
-          quit                   Exit
+          llm                    Deep LLM analysis of design
+  ask <question>         Ask LLM a design question
+  <file.xlsx>            Load spec from Excel
+  quit                   Exit
 """
 
     def _status(self):
@@ -309,7 +317,11 @@ Commands:
 
     def _load_spec(self, fp):
         try:
-            self._spec = load_spec_from_file(fp)
+            if fp.endswith(".xlsx"):
+                from .design_spec import load_spec_from_excel
+                self._spec = load_spec_from_excel(fp)
+            else:
+                self._spec = load_spec_from_file(fp)
             return f"Loaded: {self._spec.project_name}\\n  {self._spec.rated_power_kw}kW {self._spec.rated_speed_rpm}rpm {self._spec.motor_type}\\n  Rated torque: {self._spec.rated_torque_nm:.0f} Nm\\n\\nType 'generate' to create design."
         except Exception as e:
             return f"Failed: {e}"
@@ -526,6 +538,58 @@ Commands:
         md = self.reporter.generate_markdown(report, adv_sug, pn, ds)
         self.reporter.save_report(md, fp)
         return f"Report saved: {fp}"
+
+    def _llm_analyze(self):
+        """Deep LLM analysis of current design."""
+        last = self.session_mgr.get_last_snapshot()
+        if not last:
+            return "No simulation data. Record simulation first."
+        
+        # Build summaries
+        spec_s = ""
+        if self._spec:
+            spec_s = f"{self._spec.rated_power_kw}kW {self._spec.rated_speed_rpm}rpm {self._spec.motor_type} {self._spec.cooling}"
+        design_s = ""
+        if last.em_results:
+            e = last.em_results
+            design_s = f"Torque: {e.get('torque_avg','?')}Nm, Eff: {e.get('efficiency','?')}%, "
+            design_s += f"Ripple: {e.get('torque_ripple_pct','?')}%, "
+            design_s += f"Losses: Cu={e.get('copper_loss','?')}kW Fe={e.get('iron_loss','?')}kW PM={e.get('pm_loss','?')}kW"
+        if last.thermal_results:
+            t = last.thermal_results
+            design_s += f" | Temp: Winding={t.get('winding_temp_max','?')}C PM={t.get('pm_temp_max','?')}C"
+
+        # Get rule-based suggestions first
+        spec_dict = self._spec.__dict__ if self._spec else {}
+        rule_sug = self.proactive.analyze_and_suggest(
+            last.em_results, last.thermal_results, spec_dict,
+            self.session_mgr.session.parameters, last.spec_comparison)
+        rule_text = "\n".join([f"[P{s['priority']}] {s['issue']}: {s['action']}" for s in rule_sug])
+
+        advisor = get_llm_advisor()
+        app = self._spec.application if self._spec else "industrial"
+        
+        print("  (Analyzing with LLM...)")
+        analysis = advisor.analyze_design(design_s, spec_s, rule_text, app)
+        return f"\n{'='*50}\n  LLM Deep Analysis\n{'='*50}\n{analysis}\n{'='*50}"
+
+    def _llm_ask(self, question: str):
+        """Ask an open-ended design question to LLM."""
+        if not self.session_mgr or not self.session_mgr.session:
+            return "No active session."
+        
+        params = self.session_mgr.session.parameters
+        last = self.session_mgr.get_last_snapshot()
+        ctx = f"Parameters: {json.dumps({k: v for k, v in list(params.items())[:15]})}\n"
+        if last and last.em_results:
+            ctx += f"Results: {last.em_results}\n"
+        if last and last.thermal_results:
+            ctx += f"Thermal: {last.thermal_results}\n"
+        
+        advisor = get_llm_advisor()
+        print("  (LLM thinking...)")
+        return f"\n{advisor.answer_question(question, ctx)}"
+
 
     def _save(self, fp):
         if not self.session_mgr.session:
