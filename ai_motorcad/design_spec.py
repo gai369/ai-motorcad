@@ -1,4 +1,4 @@
-"""Project specification parser and initial motor design generator.
+﻿"""Project specification parser and initial motor design generator.
 
 Handles:
 - Loading project specs from files (JSON, YAML, TXT)
@@ -352,6 +352,115 @@ def load_spec_from_file(filepath: str) -> ProjectSpec:
         kwargs["max_current_arms"] = round(kwargs["rated_power_kw"] * 1000 / kwargs["dc_voltage_v"] / 0.85, 1)
 
     return ProjectSpec(**kwargs)
+
+
+
+
+# ---------------------------------------------------------------------------
+# Excel loading
+# ---------------------------------------------------------------------------
+
+def _detect_spec_columns(headers: list) -> dict:
+    """Auto-detect spec column names from Excel headers (Chinese + English)."""
+    mapping = {}
+    name_variants = {
+        "project_name": ["project", "project_name", "name", "项目", "项目名称", "名称"],
+        "motor_type": ["motor_type", "type", "电机类型", "类型"],
+        "rated_power_kw": ["rated_power_kw", "power_kw", "power", "额定功率", "功率", "功率(kw)", "功率（kw）"],
+        "rated_speed_rpm": ["rated_speed_rpm", "speed_rpm", "speed", "额定转速", "转速", "转速(rpm)", "转速（rpm）"],
+        "max_speed_rpm": ["max_speed_rpm", "max_speed", "最高转速", "峰值转速"],
+        "rated_torque_nm": ["rated_torque_nm", "torque_nm", "torque", "额定转矩", "转矩", "转矩(nm)", "转矩（nm）"],
+        "peak_torque_nm": ["peak_torque_nm", "peak_torque", "峰值转矩", "最大转矩"],
+        "dc_voltage_v": ["dc_voltage_v", "voltage_v", "voltage", "母线电压", "电压", "电压(v)", "电压（v）"],
+        "max_current_arms": ["max_current_arms", "current_arms", "电流", "额定电流"],
+        "target_efficiency_pct": ["target_efficiency_pct", "efficiency", "效率", "目标效率", "效率(%)", "效率（%）"],
+        "max_outer_diameter_mm": ["max_outer_diameter_mm", "outer_dia", "外径", "最大外径", "外径(mm)", "外径（mm）"],
+        "max_stack_length_mm": ["max_stack_length_mm", "stack_length", "叠长", "铁心长", "叠厚", "长度(mm)", "长度（mm）"],
+        "cooling": ["cooling", "冷却方式", "冷却"],
+        "application": ["application", "app", "应用", "用途"],
+        "max_current_density": ["max_current_density", "电流密度", "电密"],
+    }
+
+    for idx, header in enumerate(headers):
+        h = str(header).strip().lower()
+        import re
+        h = re.sub(r'[^a-z0-9\u4e00-\u9fff]', '', h)
+        best_field = None
+        best_len = 0
+        for field, variants in name_variants.items():
+            norm_variants = [re.sub(r'[^a-z0-9\u4e00-\u9fff]', '', v.lower()) for v in variants]
+            for nv in norm_variants:
+                if (nv in h or h in nv) and len(nv) > best_len:
+                    best_len = len(nv)
+                    best_field = field
+        if best_field:
+            mapping[best_field] = idx
+    return mapping
+
+
+def load_spec_from_excel(filepath: str, row: int = 0) -> ProjectSpec:
+    """Load project spec from an Excel file (.xlsx).
+
+    Supports both single-row (row=0) and multi-row (specify which row).
+    Auto-detects column headers in Chinese or English.
+
+    Args:
+        filepath: Path to .xlsx file.
+        row: Row index (0-based, after header). Default first data row.
+
+    Returns:
+        ProjectSpec object.
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(filepath, data_only=True)
+    ws = wb.active
+
+    # Read headers from first row
+    headers = [cell.value for cell in ws[1]]
+    col_map = _detect_spec_columns(headers)
+
+    # Read data from specified row
+    data_row = row + 2  # Excel is 1-based, row 1 is header
+    kwargs = {}
+    for field, col_idx in col_map.items():
+        value = ws.cell(row=data_row, column=col_idx + 1).value
+        if value is not None:
+            if field in ("project_name", "motor_type", "cooling", "application"):
+                kwargs[field] = str(value).strip()
+            else:
+                try:
+                    kwargs[field] = float(value)
+                except (ValueError, TypeError):
+                    kwargs[field] = str(value).strip()
+
+    # Handle cooling normalization
+    cooling_map = {
+        "水冷": "water_jacket", "water": "water_jacket", "water_jacket": "water_jacket",
+        "油冷": "oil_spray", "oil": "oil_spray", "oil_spray": "oil_spray",
+        "风冷": "forced_air", "air": "forced_air", "forced_air": "forced_air",
+        "自然冷却": "natural_convection", "natural": "natural_convection",
+    }
+    if "cooling" in kwargs:
+        k = str(kwargs["cooling"]).lower().replace(" ", "_")
+        kwargs["cooling"] = cooling_map.get(k, kwargs["cooling"])
+
+    return ProjectSpec(**kwargs)
+
+
+def load_specs_from_excel(filepath: str) -> list:
+    """Load multiple project specs from an Excel file (one per row)."""
+    import openpyxl
+    wb = openpyxl.load_workbook(filepath, data_only=True)
+    ws = wb.active
+    specs = []
+    for row_idx in range(2, ws.max_row + 1):
+        try:
+            spec = load_spec_from_excel(filepath, row=row_idx - 2)
+            specs.append(spec)
+        except Exception:
+            continue
+    return specs
 
 
 def parse_spec_from_text(text: str) -> ProjectSpec:
