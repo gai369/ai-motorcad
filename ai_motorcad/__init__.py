@@ -23,6 +23,7 @@ from .design_spec import (
 )
 from .design_tracker import SessionManager, SpecComparator, DesignSnapshot
 from .chat import MotorCADChat, ProactiveAdvisor
+from .llm_advisor import LLMAdvisor, LLMClient, get_llm_advisor, has_llm
 
 __all__ = [
     "MotorCADConnector", "PYMOTORCAD_AVAILABLE",
@@ -33,4 +34,5 @@ __all__ = [
     "load_spec_from_file", "parse_spec_from_text",
     "SessionManager", "SpecComparator", "DesignSnapshot",
     "MotorCADChat", "ProactiveAdvisor",
+    "LLMAdvisor", "LLMClient", "get_llm_advisor", "has_llm",
 ]
