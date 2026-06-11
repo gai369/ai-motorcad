@@ -390,7 +390,9 @@ def _detect_spec_columns(headers: list) -> dict:
         for field, variants in name_variants.items():
             norm_variants = [re.sub(r'[^a-z0-9\u4e00-\u9fff]', '', v.lower()) for v in variants]
             for nv in norm_variants:
-                if (nv in h or h in nv) and len(nv) > best_len:
+                # Match only if variant starts at beginning of header, or header in variant
+                # This prevents "转速rpm" from matching "最高转速rpm"
+                if (h.startswith(nv) or nv.startswith(h)) and len(nv) > best_len:
                     best_len = len(nv)
                     best_field = field
         if best_field:
